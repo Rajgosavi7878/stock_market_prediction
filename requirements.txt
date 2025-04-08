@@ -12,11 +12,13 @@ datareader==0.0.9
 distlib==0.3.9
 filelock==3.18.0
 Flask==3.1.0
+Flask-SQLAlchemy==3.1.1
 flatbuffers==25.2.10
 fonttools==4.56.0
 frozendict==2.4.6
 gast==0.6.0
 google-pasta==0.2.0
+greenlet==3.1.1
 grpcio==1.71.0
 gunicorn==23.0.0
 h5py==3.13.0
@@ -58,6 +60,7 @@ scipy==1.15.2
 seaborn==0.13.2
 six==1.17.0
 soupsieve==2.6
+SQLAlchemy==2.0.40
 tensorboard==2.19.0
 tensorboard-data-server==0.7.2
 tensorflow-io-gcs-filesystem==0.31.0
