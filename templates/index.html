@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+  <div class="container-fluid">
+    <span class="navbar-brand">📈 Raj Stock Predictor</span>
+    <div class="ms-auto">
+      <a href="/logout" class="btn btn-outline-light">Logout</a>
+    </div>
+  </div>
+</nav>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> Raj Stock Price Predictor</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body { background-color: #f8f9fa; }
+        .chart-container { width: 100%; height: 300px; position: relative; }
+        .toast-container { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 9999; background: rgba(0, 0, 0, 0.75); color: white; padding: 20px; border-radius: 8px; display: none; }
+        .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; color: white; font-size: 24px; font-weight: bold; z-index: 10000; display: none; }
+        .stock-card {
+  font-size: 0.85rem;
+  line-height: 1.2;
+  text-align: center;
+  margin-top: 4px;
+}
+
+.change {
+  font-size: 16px;
+  font-weight: 500;
+  color: red; /* Dynamically set green/red */
+}
+
+.meta,
+.premarket {
+  font-size: 12px;
+  color: gray;
+  margin: 0;
+}
+    </style>
+</head>
+<body>
+    <div class="loading-overlay" id="loading-overlay">Loading...</div>
+    <div class="toast-container" id="toast-container"></div>
+
+    <div class="container mt-5">
+        <h2 class="text-center mb-4">📈 Stock Price Predictor</h2>
+
+        <div class="card shadow p-4">
+            <div class="mb-3">
+                <label for="symbol" class="form-label">Enter Stock Symbol:</label>
+                <input type="text" id="symbol" class="form-control" placeholder="AAPL, TSLA, INFY.NS">
+            </div>
+
+            <div class="mb-3">
+                <label for="timeframe" class="form-label">Select Timeframe:</label>
+                <select id="timeframe" class="form-select">
+                    <option value="1wk" selected >1 Week</option>
+                    <option value="1mo">1 Month</option>
+                    <option value="3mo">3 Months</option>
+                    <option value="6mo" >6 Months</option>
+                    <option value="1y">1 Year</option>
+                    <option value="2y">2 Years</option>
+                </select>
+            </div>
+
+            <button id="predict-btn" class="btn btn-primary w-100" onclick="predictStock()">Predict</button>
+
+            <div id="error-message" class="alert alert-danger mt-3 d-none"></div>
+        </div>
+
+      <div class="mt-3 text-center">
+    <label for="model-choice" class="form-label fw-bold">Choose Prediction Model:</label>
+    <select id="model-choice" class="form-select w-auto d-inline-block">
+    <option value="lstm">LSTM</option>
+    <option value="linear">Linear Regression</option>
+    <option value="random_forest">Random Forest</option> <!-- NEW -->
+</select>
+</div>
+      <div class="mt-4 text-center">
+  <!-- Actual price inside the heading -->
+  <h4 id="current-stock-price" class="fw-bold text-success">Current Price: --</h4>
+  
+  <!-- Rest of the info below -->
+  <div id="stock-display" class="stock-card">
+    <p id="stock-change" class="change"></p>
+    <p id="stock-close-info" class="meta"></p>
+    <p id="stock-premarket" class="premarket"></p>
+  </div>
+</div>	
+            <div class="mt-4 text-center">
+    <h4 id="predicted-stock-price" class="fw-bold text-primary">Predicted Price: -- </h4>
+   
+     <div class="mt-4">
+            <div class="card p-4">
+                <h4 class="text-center">Actual Stock Prices</h4>
+                <div class="chart-container">
+                    <canvas id="actualChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-4">
+            <div class="card p-4">
+                <h4 class="text-center">Linear Regression Prediction</h4>
+                <div class="chart-container">
+                    <canvas id="linearChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-4">
+            <div class="card p-4">
+                <h4 class="text-center">LSTM Prediction</h4>
+                <div class="chart-container">
+                    <canvas id="lstmChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-4">
+    <div class="card p-4">
+        <h4 class="text-center">Random Forest Prediction</h4>
+        <div class="chart-container">
+            <canvas id="rfChart"></canvas>
+        </div>
+    </div>
+</div>
+
+    <script>
+        function predictStock() {
+            let symbol = document.getElementById("symbol").value.trim().toUpperCase();
+            const timeframe = document.getElementById("timeframe").value;
+
+            if (!symbol) {
+                alert("Please enter a stock symbol.");
+                return;
+            }
+
+            document.getElementById("loading-overlay").style.display = "flex";
+
+            fetch("/predict",{
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ symbol: symbol, timeframe:timeframe })
+            })
+            .then(response => response.json())
+            .then(data => {
+    const currentPrice = data.latest_price;
+    const actualPrices = data.actual_prices;
+    const prevPrice = actualPrices[actualPrices.length - 2];
+    const change = (currentPrice - prevPrice).toFixed(2);
+    const percentChange = ((change / prevPrice) * 100).toFixed(2);
+
+    const symbol = change >= 0 ? "+" : "−";
+    const absChange = Math.abs(change).toFixed(2);
+    const absPercent = Math.abs(percentChange).toFixed(2);
+
+    // Main Price and Change
+    document.getElementById("current-stock-price").innerText = `Actual Price: $${currentPrice} USD`;
+    document.getElementById("stock-change").innerText = `${symbol}${absChange} (${symbol}${absPercent}%) today`;
+    document.getElementById("stock-change").classList.toggle("text-success", change >= 0);
+    document.getElementById("stock-change").classList.toggle("text-danger", change < 0);
+
+    // Closed Info
+    const now = new Date();
+    const options = { day: 'numeric', month: 'short', hour: 'numeric', minute: 'numeric', hour12: true };
+    const formattedDateTime = now.toLocaleString('en-US', options);
+    document.getElementById("stock-close-info").innerText = `Closed: ${formattedDateTime} GMT-4 • Disclaimer`;
+
+    // Simulated Pre-market Example (replace if real pre-market data is fetched)
+    const preMarketPrice = (currentPrice - 6.88).toFixed(2);
+    document.getElementById("stock-premarket").innerText = `Pre-market ${preMarketPrice} −6.88 (3.65%)`;
+
+    // Predicted Price
+    const modelChoice = document.getElementById("model-choice").value;
+    let predictedPrice;
+
+    if (modelChoice === "lstm") {
+            predictedPrice = data.lstm_future_predictions.at(-1);
+} 
+         else if (modelChoice === "linear") {
+            predictedPrice = data.linear_future_predictions.at(-1);
+}       
+        else if (modelChoice === "random_forest") {
+            predictedPrice = data.rf_future_predictions.at(-1); // NEW
+}
+document.getElementById("predicted-stock-price").innerText = `Predicted Price (${modelChoice.toUpperCase()}): $${predictedPrice} USD`;
+
+
+
+    // Charts
+    renderChart("actualChart", "Actual Prices", data.dates, data.actual_prices, "blue");
+    renderChart("linearChart", "Linear Prediction", data.linear_future_dates, data.linear_future_predictions, "green");
+    renderChart("lstmChart", "LSTM Prediction", data.lstm_future_dates, data.lstm_future_predictions, "red");
+    console.log("RF Dates:", data.rf_future_dates);
+    console.log("RF Predictions:", data.rf_future_predictions);
+    renderChart("rfChart", "Random Forest Prediction", data.rf_future_dates, data.rf_future_predictions, "orange");
+})
+    
+            .finally(() => {
+                document.getElementById("loading-overlay").style.display = "none";
+            });
+        }
+
+        // Store chart instances globally
+window.myCharts = window.myCharts || {};
+
+function renderChart(canvasId, label, labels, data, color) {
+    const ctx = document.getElementById(canvasId).getContext('2d');
+
+    // Destroy existing chart if it exists
+    if (window.myCharts[canvasId]) {
+        window.myCharts[canvasId].destroy();
+    }
+
+    // Create new chart
+    const newChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: label,
+                data: data,
+                borderColor: color,
+                fill: false
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: true },
+                title: { display: false }
+            },
+            scales: {
+                x: { title: { display: true, text: 'Date' }},
+                y: { title: { display: true, text: 'Price' }}
+            }
+        }
+    });
+
+    // Save chart instance
+    window.myCharts[canvasId] = newChart;
+}
+
+    </script>
+</body>
+</html>
