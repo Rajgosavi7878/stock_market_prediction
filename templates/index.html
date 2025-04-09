@@ -17,14 +17,68 @@
 
     <style>
         body { background-color: #f8f9fa; }
-        .chart-container { width: 100%; height: 300px; position: relative; }
-        .toast-container { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 9999; background: rgba(0, 0, 0, 0.75); color: white; padding: 20px; border-radius: 8px; display: none; }
-        .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; color: white; font-size: 24px; font-weight: bold; z-index: 10000; display: none; }
-        .stock-card {
-  font-size: 0.85rem;
-  line-height: 1.2;
-  text-align: center;
-  margin-top: 4px;
+.chart-container {
+    width: 100%;
+    height: 300px;
+    position: relative;
+    border: 2px solid black; /* Light gray border */
+    border-radius: 8px; /* Optional: rounded corners for a more polished look */
+    padding: 10px; /* Optional: space between the chart and the border */
+}
+.toast-container { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 9999; background: rgba(0, 0, 0, 0.75); color: white; padding: 20px; border-radius: 8px; display: none; }
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: white;
+    font-size: 18px;
+    font-weight: bold;
+    z-index: 10000;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.5s, visibility 0s 0.5s;
+}
+
+.loading-overlay.show {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.5s;
+}
+
+.loading-toast {
+    display: flex;
+    align-items: center;
+    background-color: rgba(0, 0, 0, 0.8);
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    text-align: center;
+}
+
+.spinner {
+    border: 4px solid rgba(255, 255, 255, 0.3);
+    border-top: 4px solid #fff;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    margin-right: 10px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-toast p {
+    margin: 0;
+    font-size: 16px;
 }
 
 .change {
@@ -42,7 +96,12 @@
     </style>
 </head>
 <body>
-    <div class="loading-overlay" id="loading-overlay">Loading...</div>
+    <div class="loading-overlay" id="loading-overlay">
+    <div class="loading-toast">
+        <div class="spinner"></div>
+        <p>Loading, please wait...</p>
+    </div>
+</div>
     <div class="toast-container" id="toast-container"></div>
 
     <div class="container mt-5">
@@ -76,8 +135,14 @@
     <select id="model-choice" class="form-select w-auto d-inline-block">
     <option value="lstm">LSTM</option>
     <option value="linear">Linear Regression</option>
-    <option value="random_forest">Random Forest</option> <!-- NEW -->
+    <option value="xgboost">XGBoost Prediction</option> <!-- NEW -->
 </select>
+</div>
+<div class="mt-3 text-center">
+  <label for="prediction-date" class="form-label fw-bold">Choose Prediction Date:</label>
+  <select id="prediction-date" class="form-select w-auto d-inline-block">
+    <!-- Filled dynamically with prediction dates -->
+  </select>
 </div>
       <div class="mt-4 text-center">
   <!-- Actual price inside the heading -->
@@ -123,130 +188,202 @@
 
     <div class="mt-4">
     <div class="card p-4">
-        <h4 class="text-center">Random Forest Prediction</h4>
+        <h4 class="text-center">XGBoost Prediction</h4>
         <div class="chart-container">
-            <canvas id="rfChart"></canvas>
+            <canvas id="xgbChart"></canvas>
         </div>
     </div>
 </div>
 
-    <script>
-        function predictStock() {
-            let symbol = document.getElementById("symbol").value.trim().toUpperCase();
-            const timeframe = document.getElementById("timeframe").value;
+   <script>
+    let currentPredictions = {
+        lstm: [],
+        linear: [],
+        xgboost: []
+    };
 
-            if (!symbol) {
-                alert("Please enter a stock symbol.");
-                return;
-            }
-
-            document.getElementById("loading-overlay").style.display = "flex";
-
-            fetch("/predict",{
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ symbol: symbol, timeframe:timeframe })
-            })
-            .then(response => response.json())
-            .then(data => {
-    const currentPrice = data.latest_price;
-    const actualPrices = data.actual_prices;
-    const prevPrice = actualPrices[actualPrices.length - 2];
-    const change = (currentPrice - prevPrice).toFixed(2);
-    const percentChange = ((change / prevPrice) * 100).toFixed(2);
-
-    const symbol = change >= 0 ? "+" : "−";
-    const absChange = Math.abs(change).toFixed(2);
-    const absPercent = Math.abs(percentChange).toFixed(2);
-
-    // Main Price and Change
-    document.getElementById("current-stock-price").innerText = `Actual Price: $${currentPrice} USD`;
-    document.getElementById("stock-change").innerText = `${symbol}${absChange} (${symbol}${absPercent}%) today`;
-    document.getElementById("stock-change").classList.toggle("text-success", change >= 0);
-    document.getElementById("stock-change").classList.toggle("text-danger", change < 0);
-
-    // Closed Info
-    const now = new Date();
-    const options = { day: 'numeric', month: 'short', hour: 'numeric', minute: 'numeric', hour12: true };
-    const formattedDateTime = now.toLocaleString('en-US', options);
-    document.getElementById("stock-close-info").innerText = `Closed: ${formattedDateTime} GMT-4 • Disclaimer`;
-
-    // Simulated Pre-market Example (replace if real pre-market data is fetched)
-    const preMarketPrice = (currentPrice - 6.88).toFixed(2);
-    document.getElementById("stock-premarket").innerText = `Pre-market ${preMarketPrice} −6.88 (3.65%)`;
-
-    // Predicted Price
-    const modelChoice = document.getElementById("model-choice").value;
-    let predictedPrice;
-
-    if (modelChoice === "lstm") {
-            predictedPrice = data.lstm_future_predictions.at(-1);
-} 
-         else if (modelChoice === "linear") {
-            predictedPrice = data.linear_future_predictions.at(-1);
-}       
-        else if (modelChoice === "random_forest") {
-            predictedPrice = data.rf_future_predictions.at(-1); // NEW
+   function showToast(message) {
+    const toast = document.getElementById("toast-container");
+    toast.innerText = message;
+    toast.style.display = "block";
+    setTimeout(() => {
+        toast.style.display = "none";
+    }, 3000);
 }
-document.getElementById("predicted-stock-price").innerText = `Predicted Price (${modelChoice.toUpperCase()}): $${predictedPrice} USD`;
 
-
-
-    // Charts
-    renderChart("actualChart", "Actual Prices", data.dates, data.actual_prices, "blue");
-    renderChart("linearChart", "Linear Prediction", data.linear_future_dates, data.linear_future_predictions, "green");
-    renderChart("lstmChart", "LSTM Prediction", data.lstm_future_dates, data.lstm_future_predictions, "red");
-    console.log("RF Dates:", data.rf_future_dates);
-    console.log("RF Predictions:", data.rf_future_predictions);
-    renderChart("rfChart", "Random Forest Prediction", data.rf_future_dates, data.rf_future_predictions, "orange");
-})
-    
-            .finally(() => {
-                document.getElementById("loading-overlay").style.display = "none";
-            });
-        }
-
-        // Store chart instances globally
-window.myCharts = window.myCharts || {};
-
-function renderChart(canvasId, label, labels, data, color) {
-    const ctx = document.getElementById(canvasId).getContext('2d');
-
-    // Destroy existing chart if it exists
-    if (window.myCharts[canvasId]) {
-        window.myCharts[canvasId].destroy();
+    function showLoadingToast() {
+      document.getElementById("loading-overlay").classList.add("show");
     }
 
-    // Create new chart
-    const newChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: label,
-                data: data,
-                borderColor: color,
-                fill: false
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: true },
-                title: { display: false }
-            },
-            scales: {
-                x: { title: { display: true, text: 'Date' }},
-                y: { title: { display: true, text: 'Price' }}
-            }
+    function hideLoadingToast() {
+      document.getElementById("loading-overlay").classList.remove("show");
+    }
+
+    function predictStock() {
+        let symbol = document.getElementById("symbol").value.trim().toUpperCase();
+        const timeframe = document.getElementById("timeframe").value;
+        const modelChoice = document.getElementById("model-choice").value;
+
+        if (!symbol) {
+            alert("Please enter a stock symbol.");
+            return;
         }
-    });
 
-    // Save chart instance
-    window.myCharts[canvasId] = newChart;
+        showLoadingToast();
+
+        fetch("/predict", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ symbol: symbol, timeframe: timeframe })
+        })
+        .then(async (response) => {
+           try {
+           const data = await response.json();
+           if (!response.ok) {
+             throw new Error(data.error || "Something went wrong.");
+           }
+
+        // Handle successful response logic here (displaying data, etc.)
+           return data;
+           } catch (error) {
+             showToast(error.message);
+             clearOldData(); // Clears old data
+             document.getElementById("symbol").value = ""; // Clear symbol input field
+         }
+     })
+        .then(data => {
+            const currentPrice = data.latest_price;
+            const actualPrices = data.actual_prices;
+            const prevPrice = actualPrices[actualPrices.length - 2];
+            const change = (currentPrice - prevPrice).toFixed(2);
+            const percentChange = ((change / prevPrice) * 100).toFixed(2);
+
+            const symbol = change >= 0 ? "+" : "−";
+            const absChange = Math.abs(change).toFixed(2);
+            const absPercent = Math.abs(percentChange).toFixed(2);
+
+            document.getElementById("current-stock-price").innerText = `Actual Price: $${currentPrice} USD`;
+            document.getElementById("stock-change").innerText = `${symbol}${absChange} (${symbol}${absPercent}%) today`;
+            document.getElementById("stock-change").classList.toggle("text-success", change >= 0);
+            document.getElementById("stock-change").classList.toggle("text-danger", change < 0);
+
+            const now = new Date();
+            const options = { day: 'numeric', month: 'short', hour: 'numeric', minute: 'numeric', hour12: true };
+            const formattedDateTime = now.toLocaleString('en-US', options);
+            document.getElementById("stock-close-info").innerText = `Closed: ${formattedDateTime} GMT-4 • Disclaimer`;
+
+            const preMarketPrice = (currentPrice - 6.88).toFixed(2);
+            document.getElementById("stock-premarket").innerText = `Pre-market ${preMarketPrice} −6.88 (3.65%)`;
+
+            // Store predictions globally
+            currentPredictions.lstm = data.lstm_future_predictions;
+            currentPredictions.linear = data.linear_future_predictions;
+            currentPredictions.xgboost = data.xgb_future_predictions;
+
+            // Populate prediction date dropdown
+            let predictionDates = [];
+            if (modelChoice === "lstm") predictionDates = data.lstm_future_dates;
+            else if (modelChoice === "linear") predictionDates = data.linear_future_dates;
+            else if (modelChoice === "xgboost") predictionDates = data.xgb_future_dates;
+
+            const dateSelect = document.getElementById("prediction-date");
+            dateSelect.innerHTML = ""; // clear
+            predictionDates.forEach((date, index) => {
+                const option = document.createElement("option");
+                option.value = index;
+                option.text = date;
+                dateSelect.appendChild(option);
+            });
+
+            // Set default predicted price
+            const latestPrediction = currentPredictions[modelChoice].at(-1);
+            const latestDate = predictionDates.at(-1);
+            document.getElementById("predicted-stock-price").innerText =
+    `Predicted Price (${modelChoice.toUpperCase()} on ${latestDate}): $${latestPrediction} USD`;
+
+            // Charts
+            renderChart("actualChart", "Actual Prices", data.dates, data.actual_prices, "blue");
+            renderChart("linearChart", "Linear Prediction", data.linear_future_dates, data.linear_future_predictions, "green");
+            renderChart("lstmChart", "LSTM Prediction", data.lstm_future_dates, data.lstm_future_predictions, "red");
+            renderChart("xgbChart", "XGBoost Prediction", data.xgb_future_dates, data.xgb_future_predictions, "orange");
+        })
+        .finally(() => {
+            hideLoadingToast();
+        });
+    }
+
+    // Add listener outside to avoid re-binding
+   document.getElementById("prediction-date").addEventListener("change", function () {
+            const selectedIndex = parseInt(this.value);
+            const model = document.getElementById("model-choice").value;
+
+            const prediction = currentPredictions[model][selectedIndex];
+            const selectedDate = this.options[selectedIndex].text;
+
+            document.getElementById("predicted-stock-price").innerText =
+        `Predicted Price (${model.toUpperCase()} on ${selectedDate}): $${prediction} USD`;
+});
+
+
+    // Global chart registry
+    window.myCharts = window.myCharts || {};
+
+    function renderChart(canvasId, label, labels, data, color) {
+        const ctx = document.getElementById(canvasId).getContext('2d');
+
+        if (window.myCharts[canvasId]) {
+            window.myCharts[canvasId].destroy();
+        }
+
+        const newChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: label,
+                    data: data,
+                    borderColor: color,
+                    fill: false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: true },
+                    title: { display: false }
+                },
+                scales: {
+                    x: { title: { display: true, text: 'Date' } },
+                    y: { title: { display: true, text: 'Price' } }
+                }
+            }
+        });
+
+        window.myCharts[canvasId] = newChart;
+    }
+
+function clearOldData() {
+    // Reset price fields
+    document.getElementById("current-stock-price").innerText = "Current Price: --";
+    document.getElementById("predicted-stock-price").innerText = "Predicted Price: --";
+    document.getElementById("stock-change").innerText = "";
+    document.getElementById("stock-close-info").innerText = "";
+    document.getElementById("stock-premarket").innerText = "";
+
+    // Clear prediction date dropdown
+    const dateSelect = document.getElementById("prediction-date");
+    dateSelect.innerHTML = "";
+
+    // Destroy all charts
+    for (const key in window.myCharts) {
+        if (window.myCharts[key]) {
+            window.myCharts[key].destroy();
+            window.myCharts[key] = null;
+        }
+    }
 }
+</script>
 
-    </script>
 </body>
 </html>

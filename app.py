@@ -2,6 +2,8 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import re
+import xgboost as xgb
+import pytz
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session
@@ -41,6 +43,107 @@ def load_user(user_id):
 # === Utility Functions ===
 def savitzky_golay_filter(y, window_size, order=3):
     return savgol_filter(y, window_size, order)
+
+@app.route('/api/stock_ticker')
+def stock_ticker():
+    tickers = [
+        # US Stocks
+        'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'NFLX', 'ADBE', 'INTC',
+        # Indian Stocks (NSE prefix for Indian tickers via Yahoo Finance)
+        'RELIANCE.NS', 'TCS.NS', 'INFY.NS', 'HDFCBANK.NS', 'ICICIBANK.NS',
+        'SBIN.NS', 'AXISBANK.NS', 'KOTAKBANK.NS', 'ITC.NS', 'WIPRO.NS',
+        # Indices
+        '^NSEI', '^BSESN', '^GSPC', '^IXIC',
+    ]
+
+    data = {}
+    try:
+        stock_data = yf.download(tickers=tickers, period="1d", interval="1m", group_by='ticker', threads=True)
+
+        for symbol in tickers:
+            try:
+                if symbol in stock_data:
+                    price = stock_data[symbol]['Close'].dropna().iloc[-1]
+                else:
+                    price = stock_data['Close'][symbol].dropna().iloc[-1]
+                data[symbol] = round(price, 2)
+            except Exception as e:
+                print(f"Error with {symbol}: {e}")
+                continue
+
+    except Exception as e:
+        print("Error fetching stock data:", e)
+
+    return jsonify(data)
+ 	
+@app.route('/api/market_summary')
+def market_summary():
+    try:
+        gainers = ['RELIANCE.NS', 'LT.NS', 'SBIN.NS']
+        losers = ['TCS.NS', 'ICICIBANK.NS', 'INFY.NS']
+        result = {'gainers': [], 'losers': []}
+
+        for symbol in gainers:
+            ticker = yf.Ticker(symbol)
+            data = ticker.history(period="1d")
+            if not data.empty:
+                close = data["Close"].iloc[-1]
+                prev = data["Close"].iloc[0]
+                change = round(((close - prev) / prev) * 100, 2)
+                result['gainers'].append({
+                    'symbol': symbol.replace('.NS', ''),
+                    'price': round(close, 2),
+                    'change': change
+                })
+
+        for symbol in losers:
+            ticker = yf.Ticker(symbol)
+            data = ticker.history(period="1d")
+            if not data.empty:
+                close = data["Close"].iloc[-1]
+                prev = data["Close"].iloc[0]
+                change = round(((close - prev) / prev) * 100, 2)
+                result['losers'].append({
+                    'symbol': symbol.replace('.NS', ''),
+                    'price': round(close, 2),
+                    'change': change
+                })
+
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/index_summary')
+def index_summary():
+    try:
+        symbols = {
+            "nifty": "^NSEI",
+            "sensex": "^BSESN",
+            "sp500": "^GSPC",
+            "nasdaq": "^IXIC"
+        }
+        index_data = {}
+
+        for key, sym in symbols.items():
+            ticker = yf.Ticker(sym)
+            hist = ticker.history(period="2d")
+            if not hist.empty and len(hist) >= 2:
+                prev_close = hist["Close"].iloc[-2]
+                last_close = hist["Close"].iloc[-1]
+                change = round(last_close - prev_close, 2)
+                percent = round((change / prev_close) * 100, 2)
+
+                index_data[key] = {
+                    "value": round(last_close, 2),
+                    "change": change,
+                    "percent": percent
+                }
+
+        return jsonify(index_data)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 def get_interval(timeframe):
     if timeframe == "1wk":
@@ -92,8 +195,11 @@ def get_stock_data(symbol, timeframe):
     df = yf.download(symbol, start=start_date, end=end_date, interval=interval, progress=False)
     print(df)
     if df.empty:
-        print(f"\u26a0\ufe0f No stock data found for {symbol}")
+        print(f"No stock data found for {symbol}")
         return None
+
+    if df is None or df.empty:
+        return jsonify({'error': f'No data found for {symbol}'}), 404
 
     df["Date"] = df.index
     df.reset_index(drop=True, inplace=True)
@@ -125,7 +231,7 @@ def polynomial_regression_prediction(df, num_days, degree=3):
 
     y_pred = model.predict(x_test)
     accuracy = r2_score(y_test, y_pred)
-    print(f"📐 Polynomial Regression (deg {degree}) R² Score: {accuracy:.4f}")
+    print(f"Polynomial Regression (deg {degree}) R² Score: {accuracy:.4f}")
 
     # Future prediction
     future_x = np.arange(len(series), len(series) + num_days).reshape(-1, 1)
@@ -152,7 +258,7 @@ def lstm_prediction(df, num_days):
         y.append(data_scaled[i+seq_length])
 
     if len(X) == 0:
-        print("⚠️ Not enough data for LSTM training.")
+        print("Not enough data for LSTM training.")
         return {
             "future_dates": generate_future_dates(df, num_days),
             "future_predictions": [None] * num_days,
@@ -174,14 +280,14 @@ def lstm_prediction(df, num_days):
     history = model.fit(X, y, epochs=10, batch_size=16, verbose=0)
 
     final_loss = history.history['loss'][-1]
-    print(f"✅ LSTM Final Training Loss: {final_loss:.6f}")
+    print(f"LSTM Final Training Loss: {final_loss:.6f}")
 
 
     y_pred_scaled = model.predict(X_test, verbose=0)
     y_test_inv = scaler.inverse_transform(y_test)
     y_pred_inv = scaler.inverse_transform(y_pred_scaled)
     r2 = r2_score(y_test_inv, y_pred_inv)
-    print(f"✅ LSTM R² Score: {r2:.4f}")
+    print(f"LSTM R² Score: {r2:.4f}")
 
     last_seq = data_scaled[-seq_length:].reshape(1, seq_length, 1)
     lstm_predictions = []
@@ -206,9 +312,10 @@ def create_lag_features(series, lag=20):
         X.append(series[i-lag:i])
         y.append(series[i])
     return np.array(X), np.array(y)
+  
 
-def random_forest_prediction(df, num_days):
-    print("Training Random Forest Regressor...")
+def xgboost_prediction(df, num_days):
+    print("Training XGBoost Regressor...")  # ✅ Log message updated
 
     series = df["Close"].squeeze()
     series.index = np.arange(len(series))
@@ -220,25 +327,26 @@ def random_forest_prediction(df, num_days):
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=1)
     
-    rf_model = RandomForestRegressor(n_estimators=200, random_state=42)
-    rf_model.fit(X_train, y_train)
+    # ✅ Changed from RandomForest to XGBoost
+    xgb_model = xgb.XGBRegressor(n_estimators=200, max_depth=5, learning_rate=0.1, objective='reg:squarederror', random_state=42)
+    xgb_model.fit(X_train, y_train)
 
-    y_pred = rf_model.predict(X_test)
+    y_pred = xgb_model.predict(X_test)
     accuracy = r2_score(y_test, y_pred)
-    print(f"Random Forest R² Score: {accuracy:.4f}")
+    print(f"XGBoost R² Score: {accuracy:.4f}")  # ✅ Log message updated
 
-    # Predict future
+    # ✅ Future prediction loop same as before
     last_sequence = series.to_numpy()[-lag:]
     future_predictions = []
     for _ in range(num_days):
         input_seq = last_sequence.reshape(1, -1)
-        next_val = rf_model.predict(input_seq)[0]
+        next_val = xgb_model.predict(input_seq)[0]
         future_predictions.append(next_val)
         last_sequence = np.append(last_sequence[1:], next_val)
 
     return {
         "future_dates": generate_future_dates(df, num_days),
-        "future_predictions": future_predictions,
+        "future_predictions": [round(float(p), 2) for p in future_predictions],
         "r2_score": round(accuracy, 4)
     }
 
@@ -246,33 +354,38 @@ def random_forest_prediction(df, num_days):
 def get_stock_prediction(symbol, timeframe):
     df = get_stock_data(symbol, timeframe)
     if df is None or df.empty:
-        print( "DEBUG: No stock data found for {symbol}")
+        print(f"DEBUG: No stock data found for {symbol}")
         return None
 
     print(f"DEBUG: Successfully fetched stock data for {symbol}")
     latest_price = round(float(df["Close"].iloc[-1]), 2)
     num_days = get_num_prediction_days(timeframe)
 
-    linear_pred = polynomial_regression_prediction(df, num_days, degree=3)
+    poly_pred = polynomial_regression_prediction(df, num_days, degree=3)
     lstm_pred = lstm_prediction(df, num_days)
-    rf_pred = random_forest_prediction(df, num_days)
+    xgb_pred = xgboost_prediction(df, num_days)
 
     prediction_data = {
-    "latest_price": latest_price,
-    "dates": df["Date"].dt.strftime('%Y-%m-%d').tolist(),
-    "actual_prices": df["Close"].squeeze().astype(float).round(2).tolist(),
-    "linear_future_dates": linear_pred["future_dates"],
-    "linear_future_predictions": [round(float(p), 2) for p in linear_pred["future_predictions"]],
-    "linear_r2_score": linear_pred["r2_score"],
-    "lstm_future_dates": lstm_pred["future_dates"],
-    "lstm_future_predictions": [round(float(p), 2) for p in lstm_pred["future_predictions"]],
-    "lstm_train_loss": lstm_pred["train_loss"],
-    "rf_future_dates": rf_pred["future_dates"],
-"rf_future_predictions": [round(float(p), 2) for p in rf_pred["future_predictions"]],
-    "random_forest_r2_score": rf_pred["r2_score"]
-}
+        "latest_price": latest_price,
+        "dates": df["Date"].dt.strftime('%Y-%m-%d').tolist(),
+        "actual_prices": df["Close"].squeeze().astype(float).round(2).tolist(),
+
+        "linear_future_dates": poly_pred["future_dates"],
+        "linear_future_predictions": [round(float(p), 2) for p in poly_pred["future_predictions"]],
+        "linear_r2_score": poly_pred["r2_score"],
+
+        "lstm_future_dates": lstm_pred["future_dates"],
+        "lstm_future_predictions": [round(float(p), 2) for p in lstm_pred["future_predictions"]],
+        "lstm_train_loss": lstm_pred["train_loss"],
+        "lstm_r2_score": lstm_pred["lstm_r2_score"],
+
+        "xgb_future_dates": xgb_pred["future_dates"],
+        "xgb_future_predictions": xgb_pred["future_predictions"],
+        "xgb_r2_score": xgb_pred["r2_score"]
+    }
 
     return prediction_data
+
 
 @app.route('/')
 def index():

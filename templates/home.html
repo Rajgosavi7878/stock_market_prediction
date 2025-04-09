@@ -1,41 +1,224 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Welcome</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Pacifico&family=Open+Sans&display=swap" rel="stylesheet">
-    <style>
-        body {
-            background: linear-gradient(to right, #e0eafc, #cfdef3);
-            font-family: 'Open Sans', sans-serif;
-        }
-        h2 {
-            font-family: 'Pacifico', cursive;
-            font-size: 2.5rem;
-            color: #2c3e50;
-            margin-bottom: 20px;
-        }
-        .card {
-            background-color: white;
-            border-radius: 1rem;
-            padding: 40px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-        }
-        .btn-custom {
-            padding: 10px 30px;
-            font-size: 1.1rem;
-            border-radius: 30px;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <title>Welcome</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron&family=Open+Sans&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Open Sans', sans-serif;
+    }
+    h2 {
+      font-family: 'Orbitron', sans-serif;
+    }
+    @keyframes scroll {
+      0% { transform: translateX(100%); }
+      100% { transform: translateX(-100%); }
+    }
+    .animate-marquee {
+      display: inline-block;
+      white-space: nowrap;
+      animation: scroll 50s linear infinite;
+    }
+  </style>
 </head>
-<body>
-    <div class="container d-flex justify-content-center align-items-center vh-100">
-        <div class="card text-center">
-            <h2>Welcome, {{ user }} 👋</h2>
-            <p class="lead">You're now logged into the <strong>Raj Prediction App</strong>.</p>
-            <a href="{{ url_for('dashboard') }}" class="btn btn-success btn-custom mt-3">Go to Dashboard</a>
-        </div>
+<body class="bg-black text-white min-h-screen flex flex-col items-center relative pt-20">
+
+  <!-- Real-time Ticker -->
+  <div class="absolute top-0 w-full bg-white text-black py-2 text-sm font-semibold border-b border-gray-700 shadow-lg overflow-hidden z-50">
+    <div id="tickerData" class="animate-marquee flex gap-10 px-4"></div>
+  </div>
+
+  <!-- Main card -->
+  <div class="bg-white text-black rounded-2xl shadow-2xl px-8 py-10 w-full max-w-md text-center animate-fade-in-down mt-24">
+    <h2 class="text-3xl font-bold mb-2">Welcome, {{ user }} 👋</h2>
+    <p class="text-sm mb-6">You're now logged into the <span class="font-semibold">Raj Prediction App</span>.</p>
+    <a href="{{ url_for('dashboard') }}"
+       class="bg-black hover:bg-gray-800 text-white px-10 py-3 rounded-full text-sm transition duration-300 ease-in-out shadow-md hover:shadow-lg">
+      Go to Dashboard
+    </a>
+  </div>
+
+  <!-- Mini Summary Panel -->
+  <div class="mt-10 w-full max-w-4xl text-sm">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+      <div class="bg-white text-black rounded-xl p-4 shadow-md">
+        <h3 class="font-bold mb-2">Top Gainers / Losers</h3>
+        <div id="gainersLosers">Loading...</div>
+      </div>
+      <div class="bg-white text-black rounded-xl p-4 shadow-md">
+        <h3 class="font-bold mb-2">Nifty & Sensex</h3>
+        <div id="indianIndices">Loading...</div>
+      </div>
+      <div class="bg-white text-black rounded-xl p-4 shadow-md">
+        <h3 class="font-bold mb-2">S&P 500 / NASDAQ</h3>
+        <div id="usIndices">Loading...</div>
+      </div>
     </div>
+  </div>
+
+  <!-- Market Status -->
+  <div class="mt-6 bg-white text-black rounded-xl p-4 shadow-md text-center w-full max-w-md">
+    <h3 class="font-bold">Market Status</h3>
+    <div id="marketStatus">Loading market status...</div>
+  </div>
+
+  <!-- Tailwind Animations -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          animation: {
+            'fade-in-down': 'fadeInDown 0.6s ease-out'
+          },
+          keyframes: {
+            fadeInDown: {
+              '0%': { opacity: '0', transform: 'translateY(-20px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' }
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- JavaScript: Ticker, Indices, Market Status -->
+  <script>
+    let previousData = {};
+
+    async function fetchStockData() {
+      try {
+        const res = await fetch("/api/stock_ticker");
+        const data = await res.json();
+        const tickerDiv = document.getElementById("tickerData");
+        tickerDiv.innerHTML = "";
+
+        Object.entries(data).forEach(([symbol, price]) => {
+          const previous = previousData[symbol];
+          const isUp = !previous || price > previous;
+          const arrow = isUp ? '▲' : '▼';
+          const arrowColor = isUp ? 'text-green-600' : 'text-red-600';
+          previousData[symbol] = price;
+
+          const span = document.createElement("span");
+          span.className = "text-black font-semibold text-base flex items-center gap-1";
+          const cleanSymbol = symbol.replace('.NS', '');
+          const currency = symbol.includes('.NS') || symbol.includes('^NSEI') ? '₹' : '$';
+          span.innerHTML = `💹 <strong>${cleanSymbol}</strong>: ${currency}${price} <span class="${arrowColor} text-base">${arrow}</span>`;
+          tickerDiv.appendChild(span);
+        });
+      } catch (err) {
+        console.error("Stock data error:", err);
+        document.getElementById("tickerData").textContent = "Failed to load stock data.";
+      }
+    }
+
+ async function fetchSummaryData() {
+  try {
+    // Gainers / Losers
+    const res1 = await fetch("/api/market_summary");
+    const data1 = await res1.json();
+
+    const gainers = data1.gainers.map(g => {
+      const arrow = parseFloat(g.change) >= 0 ? '▲' : '▼';
+      const color = parseFloat(g.change) >= 0 ? 'text-green-600' : 'text-red-600';
+      return `<span class="${color}">${arrow} ${g.symbol}</span> ₹${g.price} (${g.change}%)`;
+    }).join("<br>");
+
+    const losers = data1.losers.map(l => {
+  const change = parseFloat(l.change);
+  let arrow = "–";
+  let color = "text-gray-500";
+
+  if (change > 0) {
+    arrow = "▲";
+    color = "text-green-600";
+  } else if (change < 0) {
+    arrow = "▼";
+    color = "text-red-600";
+  }
+
+  return `<span class="${color}">${arrow} ${l.symbol}</span> ₹${l.price} (${l.change}%)`;
+}).join("<br>");
+
+    document.getElementById("gainersLosers").innerHTML = `
+      <div><strong>Gainers:</strong><br>${gainers}</div>
+      <div class="mt-2"><strong>Losers:</strong><br>${losers}</div>
+    `;
+
+    // Indices: Nifty, Sensex, S&P 500, NASDAQ
+    const res2 = await fetch("/api/index_summary");
+    const data2 = await res2.json();
+
+    function renderIndex(label, value, change, percent, currency = "₹") {
+      const isUp = parseFloat(change) >= 0;
+      const arrow = isUp ? '▲' : '▼';
+      const color = isUp ? 'text-green-600' : 'text-red-600';
+      return `
+        ${label}: <span class="font-semibold">${currency}${value}</span>
+        <span class="${color} text-sm">(${arrow} ${change} / ${percent}%)</span>
+      `;
+    }
+
+    const now = new Date();
+    const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    document.getElementById("indianIndices").innerHTML = `
+      ${renderIndex("Nifty", data2.nifty.value, data2.nifty.change, data2.nifty.percent)}<br>
+      ${renderIndex("Sensex", data2.sensex.value, data2.sensex.change, data2.sensex.percent)}<br>
+      <div class="text-xs text-gray-400 mt-1">Last updated: ${time}</div>
+    `;
+
+    document.getElementById("usIndices").innerHTML = `
+      ${renderIndex("S&P 500", data2.sp500.value, data2.sp500.change, data2.sp500.percent, "$")}<br>
+      ${renderIndex("NASDAQ", data2.nasdaq.value, data2.nasdaq.change, data2.nasdaq.percent, "$")}<br>
+      <div class="text-xs text-gray-400 mt-1">Last updated: ${time}</div>
+    `;
+
+  } catch (err) {
+    console.error("Summary fetch failed:", err);
+    document.getElementById("gainersLosers").textContent = "Failed to load summary data.";
+    document.getElementById("indianIndices").textContent = "Error loading indices.";
+    document.getElementById("usIndices").textContent = "Error loading indices.";
+  }
+}
+
+
+
+    function updateMarketStatus() {
+      const now = new Date();
+      const indianOpen = new Date();
+      const indianClose = new Date();
+      const usOpen = new Date();
+      const usClose = new Date();
+
+      indianOpen.setHours(9, 15, 0);
+      indianClose.setHours(15, 30, 0);
+
+      usOpen.setHours(19, 0, 0); // 9:30 AM ET
+      usClose.setHours(1, 30, 0); // 4:00 PM ET (next day IST)
+
+      const isIndianOpen = now >= indianOpen && now <= indianClose;
+      const isUSOpen = now >= usOpen || now <= usClose;
+
+      const statusText = `
+        🇮🇳 Indian Market: <span class="${isIndianOpen ? 'text-green-600' : 'text-red-600'}">${isIndianOpen ? 'OPEN' : 'CLOSED'}</span><br>
+        🇺🇸 US Market: <span class="${isUSOpen ? 'text-green-600' : 'text-red-600'}">${isUSOpen ? 'OPEN' : 'CLOSED'}</span><br>
+        🕒 Time: ${now.toLocaleTimeString()}
+      `;
+
+      document.getElementById("marketStatus").innerHTML = statusText;
+    }
+
+    fetchStockData();
+    setInterval(fetchStockData, 20000);
+
+    fetchSummaryData();
+    setInterval(fetchSummaryData, 60000);
+    updateMarketStatus();
+    setInterval(updateMarketStatus, 60000);
+
+  </script>
 </body>
 </html>

@@ -4,54 +4,106 @@
     <meta charset="UTF-8">
     <title>Signup</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500&family=Open+Sans&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #000000, #1a0000);
+            background-image: url('https://www.transparenttextures.com/patterns/hexellence.png');
+            font-family: 'Open Sans', sans-serif;
+            color: #f1f1f1;
+        }
+
+        .signup-card {
+            background-color: #1a1a1a;
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
+            animation: fadeIn 1s ease-in-out;
+        }
+
+        .form-control {
+            background-color: #2a2a2a;
+            border: none;
+            color: #fff;
+        }
+
+        .form-control:focus {
+            border-color: #ff0033;
+            box-shadow: 0 0 10px #ff0033;
+        }
+
+        .btn-red {
+            background-color: #ff0033;
+            border: none;
+            color: white;
+            transition: transform 0.2s ease-in-out;
+        }
+
+        .btn-red:hover {
+            transform: scale(1.05);
+            background-color: #e60029;
+        }
+
+        h2 {
+            font-family: 'Orbitron', sans-serif;
+            color: #ff0033;
+            margin-bottom: 1rem;
+        }
+
+        .toast {
+            background-color: #2a0000;
+            color: white;
+            border: 1px solid #ff0033;
+        }
+
+        @keyframes fadeIn {
+            0% { opacity: 0; transform: translateY(-10px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+    </style>
 </head>
-<body class="bg-light">
+<body>
 
-<div class="container mt-5">
-    <h2 class="text-center mb-4">Sign Up</h2>
+<div class="container d-flex justify-content-center align-items-center min-vh-100">
+    <div class="col-md-5 signup-card">
+        <h2 class="text-center">Sign Up</h2>
 
-    <!-- Flash messages as toasts -->
-    <div class="toast-container position-fixed top-0 end-0 p-3" id="toastContainer">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            {% for category, message in messages %}
-              <div class="toast align-items-center text-bg-{{ 'danger' if category == 'danger' else category }} border-0"
-                   role="alert" aria-live="assertive" aria-atomic="true">
-                <div class="d-flex">
-                  <div class="toast-body">
-                    {{ message }}
-                  </div>
-                  <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        <!-- Toast container -->
+        <div class="toast-container position-fixed top-0 end-0 p-3" id="toastContainer">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="toast align-items-center border-0 mb-2" role="alert" aria-live="assertive" aria-atomic="true">
+                    <div class="d-flex">
+                        <div class="toast-body">{{ message }}</div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                    </div>
                 </div>
-              </div>
-            {% endfor %}
-          {% endif %}
-        {% endwith %}
+                {% endfor %}
+            {% endif %}
+            {% endwith %}
+        </div>
+
+        <!-- Signup Form -->
+        <form method="POST" action="/signup" id="signupForm">
+            <div class="mb-3">
+                <label class="form-label">Gmail</label>
+                <input type="email" name="username" class="form-control" placeholder="Enter your Gmail">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Password</label>
+                <input type="password" name="password" class="form-control" placeholder="Create a password">
+            </div>
+            <button class="btn btn-red w-100">Sign Up</button>
+        </form>
+
+        <p class="mt-3 text-center">Already registered? <a href="/login" class="text-danger">Login</a></p>
     </div>
-
-    <!-- Signup Form -->
-    <form method="POST" action="/signup" class="shadow p-4 rounded bg-white" id="signupForm" novalidate>
-        <div class="mb-3">
-            <label class="form-label">Gmail</label>
-            <input type="email" name="username" class="form-control" placeholder="Enter your Gmail">
-        </div>
-        <div class="mb-3">
-            <label class="form-label">Password (min 6 characters)</label>
-            <input type="password" name="password" class="form-control" placeholder="Create password">
-        </div>
-        <button class="btn btn-primary w-100">Sign Up</button>
-    </form>
-
-    <p class="mt-3 text-center">Already have an account? <a href="/login">Login</a></p>
 </div>
 
-<!-- Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
-<!-- JS Toast & Validation -->
 <script>
     document.addEventListener("DOMContentLoaded", function () {
-        // Show server-side toasts
         document.querySelectorAll('.toast').forEach(toastEl => {
             new bootstrap.Toast(toastEl, { delay: 2000 }).show();
         });
@@ -60,7 +112,7 @@
         form.addEventListener('submit', function (e) {
             const email = form.username.value.trim();
             const password = form.password.value.trim();
-            const gmailRegex = /^[\w\.-]+@gmail\.com$/;
+            const gmailRegex = /^[\\w\\.-]+@gmail\\.com$/;
 
             let error = '';
 
@@ -71,38 +123,30 @@
             }
 
             if (error) {
-                e.preventDefault(); // ❌ stop form submission
-                clearClientToasts(); // 🚫 clear old toasts
-                showToast(error, 'danger'); // ✅ show new toast
+                e.preventDefault();
+                clearToasts();
+                showToast(error);
             }
         });
 
-        // Show a toast
-        function showToast(message, category) {
-            const toastContainer = document.getElementById('toastContainer');
+        function showToast(message) {
+            const container = document.getElementById('toastContainer');
             const toastEl = document.createElement('div');
-            toastEl.className = `toast align-items-center text-bg-${category} border-0 mb-2`;
+            toastEl.className = `toast align-items-center border-0 mb-2`;
             toastEl.role = 'alert';
-            toastEl.ariaLive = 'assertive';
-            toastEl.ariaAtomic = 'true';
             toastEl.innerHTML = `
                 <div class="d-flex">
                     <div class="toast-body">${message}</div>
-                    <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-                </div>
-            `;
-            toastContainer.appendChild(toastEl);
-            new bootstrap.Toast(toastEl, { delay: 2000 }).show();
+                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                </div>`;
+            container.appendChild(toastEl);
+            new bootstrap.Toast(toastEl, { delay: 2500 }).show();
         }
 
-        // Clear previously shown client-side toasts
-        function clearClientToasts() {
-            const container = document.getElementById('toastContainer');
-            container.querySelectorAll('.toast').forEach(t => t.remove());
+        function clearToasts() {
+            document.getElementById('toastContainer').innerHTML = '';
         }
     });
 </script>
-
-
 </body>
 </html>
