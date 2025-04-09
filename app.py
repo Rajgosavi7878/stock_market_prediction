@@ -1,5 +1,7 @@
 import yfinance as yf
 import pandas as pd
+import numpy as np
+import re
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session
@@ -11,11 +13,11 @@ from sklearn.linear_model import LinearRegression
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 from scipy.signal import savgol_filter
-import numpy as np
-import re
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import r2_score
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.pipeline import make_pipeline
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
@@ -88,7 +90,7 @@ def get_stock_data(symbol, timeframe):
     interval = get_interval(timeframe)
     print(f"Fetching {symbol} from {start_date.date()} to {end_date.date()} with interval={interval}")
     df = yf.download(symbol, start=start_date, end=end_date, interval=interval, progress=False)
-
+    print(df)
     if df.empty:
         print(f"\u26a0\ufe0f No stock data found for {symbol}")
         return None
@@ -103,10 +105,11 @@ def generate_future_dates(df, num_days):
     future_dates = pd.date_range(start=last_known_date, periods=num_days + 1, freq='B')[1:]
     return future_dates.strftime('%Y-%m-%d').tolist()
 
-def linear_regression_prediction(df, num_days):
+def polynomial_regression_prediction(df, num_days, degree=3):
     series = df["Close"].squeeze()
     series.index = np.arange(len(series))
 
+    # Smoothing
     smooth = int(2 * (series.shape[0] // 30 or 1) + 3)
     pts = savitzky_golay_filter(series.to_numpy(), smooth, 3)
 
@@ -116,11 +119,13 @@ def linear_regression_prediction(df, num_days):
     # Train-test split
     x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
 
-    model = LinearRegression().fit(x_train, y_train)
+    # Create polynomial regression pipeline
+    model = make_pipeline(PolynomialFeatures(degree), LinearRegression())
+    model.fit(x_train, y_train)
 
     y_pred = model.predict(x_test)
     accuracy = r2_score(y_test, y_pred)
-    print(f"✅ Linear Regression R² Score: {accuracy:.4f}")
+    print(f"📐 Polynomial Regression (deg {degree}) R² Score: {accuracy:.4f}")
 
     # Future prediction
     future_x = np.arange(len(series), len(series) + num_days).reshape(-1, 1)
@@ -131,6 +136,7 @@ def linear_regression_prediction(df, num_days):
         "future_predictions": future_predictions.tolist(),
         "r2_score": round(accuracy, 4)
     }
+
 
 def lstm_prediction(df, num_days):
     data = df[['Close']].values
@@ -202,7 +208,7 @@ def create_lag_features(series, lag=20):
     return np.array(X), np.array(y)
 
 def random_forest_prediction(df, num_days):
-    print("🔍 Training Random Forest Regressor...")
+    print("Training Random Forest Regressor...")
 
     series = df["Close"].squeeze()
     series.index = np.arange(len(series))
@@ -219,7 +225,7 @@ def random_forest_prediction(df, num_days):
 
     y_pred = rf_model.predict(X_test)
     accuracy = r2_score(y_test, y_pred)
-    print(f"✅ Random Forest R² Score: {accuracy:.4f}")
+    print(f"Random Forest R² Score: {accuracy:.4f}")
 
     # Predict future
     last_sequence = series.to_numpy()[-lag:]
@@ -247,7 +253,7 @@ def get_stock_prediction(symbol, timeframe):
     latest_price = round(float(df["Close"].iloc[-1]), 2)
     num_days = get_num_prediction_days(timeframe)
 
-    linear_pred = linear_regression_prediction(df, num_days)
+    linear_pred = polynomial_regression_prediction(df, num_days, degree=3)
     lstm_pred = lstm_prediction(df, num_days)
     rf_pred = random_forest_prediction(df, num_days)
 
