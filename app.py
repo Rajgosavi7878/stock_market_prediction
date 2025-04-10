@@ -47,26 +47,39 @@ def savitzky_golay_filter(y, window_size, order=3):
 @app.route('/api/stock_ticker')
 def stock_ticker():
     tickers = [
-        # US Stocks
-        'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'NFLX', 'ADBE', 'INTC',
-        # Indian Stocks (NSE prefix for Indian tickers via Yahoo Finance)
+        # Indian Stocks First
         'RELIANCE.NS', 'TCS.NS', 'INFY.NS', 'HDFCBANK.NS', 'ICICIBANK.NS',
         'SBIN.NS', 'AXISBANK.NS', 'KOTAKBANK.NS', 'ITC.NS', 'WIPRO.NS',
+        # US Stocks
+        'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'NFLX', 'ADBE', 'INTC',
         # Indices
         '^NSEI', '^BSESN', '^GSPC', '^IXIC',
     ]
 
     data = {}
     try:
-        stock_data = yf.download(tickers=tickers, period="1d", interval="1m", group_by='ticker', threads=True)
+        # Get last 2 days of daily closing price
+        stock_data = yf.download(tickers=tickers, period="2d", interval="1d", group_by='ticker', threads=True)
 
         for symbol in tickers:
             try:
                 if symbol in stock_data:
-                    price = stock_data[symbol]['Close'].dropna().iloc[-1]
+                    closes = stock_data[symbol]['Close'].dropna()
                 else:
-                    price = stock_data['Close'][symbol].dropna().iloc[-1]
-                data[symbol] = round(price, 2)
+                    closes = stock_data['Close'][symbol].dropna()
+
+                if len(closes) >= 2:
+                    latest = closes.iloc[-1]
+                    prev = closes.iloc[-2]
+                elif len(closes) == 1:
+                    latest = prev = closes.iloc[0]
+                else:
+                    continue
+
+                data[symbol] = {
+                    "price": round(latest, 2),
+                    "change": round(latest - prev, 2)
+                }
             except Exception as e:
                 print(f"Error with {symbol}: {e}")
                 continue
@@ -85,7 +98,7 @@ def market_summary():
 
         for symbol in gainers:
             ticker = yf.Ticker(symbol)
-            data = ticker.history(period="1d")
+            data = ticker.history(period="3d")
             if not data.empty:
                 close = data["Close"].iloc[-1]
                 prev = data["Close"].iloc[0]
@@ -98,7 +111,7 @@ def market_summary():
 
         for symbol in losers:
             ticker = yf.Ticker(symbol)
-            data = ticker.history(period="1d")
+            data = ticker.history(period="3d")
             if not data.empty:
                 close = data["Close"].iloc[-1]
                 prev = data["Close"].iloc[0]
@@ -119,8 +132,18 @@ def index_summary():
         symbols = {
             "nifty": "^NSEI",
             "sensex": "^BSESN",
+            "banknifty": "^NSEBANK",
+            "niftyit": "^CNXIT",
+            "midcap": "^NSEMDCP50",
             "sp500": "^GSPC",
-            "nasdaq": "^IXIC"
+            "nasdaq": "^IXIC",
+            "dowjones": "^DJI",
+            "russell2000": "^RUT",
+            "ftse100": "^FTSE",
+            "dax": "^GDAXI",
+            "nikkei": "^N225",
+            "hangseng": "^HSI",
+            "shanghai": "000001.SS"
         }
         index_data = {}
 
@@ -432,7 +455,6 @@ def signup():
     if request.method == 'POST':
         username = request.form['username'].strip()
         password = request.form['password'].strip()
-
         # ✅ Gmail validation
         if not re.match(r'^[\w\.-]+@gmail\.com$', username):
             flash('Only Gmail addresses are allowed.', 'danger')
@@ -441,17 +463,17 @@ def signup():
         # ✅ Empty field check
         if not username or not password:
             flash('Username and password are required.', 'danger')
-            return render_template('signup.html')
+            return redirect(url_for('signup'))
 
         # ✅ Existing user check
         if User.query.filter_by(username=username).first():
             flash('This Gmail is already registered.', 'warning')
-            return render_template('signup.html')
+            return redirect(url_for('signup'))
 
         # ✅ Password strength check
         if len(password) < 6:
             flash('Password must be at least 6 characters long.', 'danger')
-            return render_template('signup.html')
+            return redirect(url_for('signup'))
 
         # ✅ Create new user
         hashed_pw = bcrypt.generate_password_hash(password).decode('utf-8')

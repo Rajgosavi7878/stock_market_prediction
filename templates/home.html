@@ -19,8 +19,48 @@
     .animate-marquee {
       display: inline-block;
       white-space: nowrap;
-      animation: scroll 50s linear infinite;
+      animation: scroll 20s linear infinite;
     }
+#toastContainer {
+        position: fixed !important;
+        top: 1rem !important;
+        right: 1rem !important;
+        z-index: 9999 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: flex-end !important;
+    }
+
+.toast {
+  background-color: #2a0000 !important;
+  color: #fff !important;
+  border: 1px solid #ff0033 !important;
+  padding: 1rem 1.25rem;
+  font-size: 1rem;
+  border-radius: 1rem;
+  margin-bottom: 0.75rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  animation: fadeInRight 0.4s ease forwards;
+  opacity: 1;
+}
+
+    @keyframes fadeInRight {
+        from {
+            opacity: 0;
+            transform: translateX(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+@keyframes slide-in {
+  0% { transform: translateX(100%); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+.animate-slide-in {
+  animation: slide-in 0.4s ease-out;
+}
   </style>
 </head>
 <body class="bg-black text-white min-h-screen flex flex-col items-center relative pt-20">
@@ -64,6 +104,19 @@
     <div id="marketStatus">Loading market status...</div>
   </div>
 
+<!-- Toast Message Container -->
+<div id="toastContainer">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="toast">
+          <p class="font-semibold">{{ message }}</p>
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+</div>
+
   <!-- Tailwind Animations -->
   <script>
     tailwind.config = {
@@ -88,31 +141,35 @@
     let previousData = {};
 
     async function fetchStockData() {
-      try {
-        const res = await fetch("/api/stock_ticker");
-        const data = await res.json();
-        const tickerDiv = document.getElementById("tickerData");
-        tickerDiv.innerHTML = "";
+  try {
+    const res = await fetch("/api/stock_ticker");
+    const data = await res.json();
+    const tickerDiv = document.getElementById("tickerData");
+    tickerDiv.innerHTML = "";
 
-        Object.entries(data).forEach(([symbol, price]) => {
-          const previous = previousData[symbol];
-          const isUp = !previous || price > previous;
-          const arrow = isUp ? '▲' : '▼';
-          const arrowColor = isUp ? 'text-green-600' : 'text-red-600';
-          previousData[symbol] = price;
+    Object.entries(data).forEach(([symbol, details]) => {
+      const price = details.price;
+      const change = details.change;
+      const isUp = change >= 0;
+      const arrow = isUp ? '▲' : '▼';
+      const arrowColor = isUp ? 'text-green-600' : 'text-red-600';
 
-          const span = document.createElement("span");
-          span.className = "text-black font-semibold text-base flex items-center gap-1";
-          const cleanSymbol = symbol.replace('.NS', '');
-          const currency = symbol.includes('.NS') || symbol.includes('^NSEI') ? '₹' : '$';
-          span.innerHTML = `💹 <strong>${cleanSymbol}</strong>: ${currency}${price} <span class="${arrowColor} text-base">${arrow}</span>`;
-          tickerDiv.appendChild(span);
-        });
-      } catch (err) {
-        console.error("Stock data error:", err);
-        document.getElementById("tickerData").textContent = "Failed to load stock data.";
-      }
-    }
+      const span = document.createElement("span");
+      span.className = "text-black font-semibold text-base flex items-center gap-1 mr-4 whitespace-nowrap";
+
+      const cleanSymbol = symbol.replace('.NS', '');
+      const currency = symbol.includes('.NS') || symbol.includes('^NSEI') ? '₹' : '$';
+
+      span.innerHTML = `💹 <strong>${cleanSymbol}</strong>: ${currency}${price} 
+        <span class="${arrowColor}">${arrow}</span>`;
+      tickerDiv.appendChild(span);
+    });
+  } catch (err) {
+    console.error("Stock data error:", err);
+    document.getElementById("tickerData").textContent = "Failed to load stock data.";
+  }
+}
+
 
  async function fetchSummaryData() {
   try {
@@ -212,13 +269,22 @@
     }
 
     fetchStockData();
-    setInterval(fetchStockData, 20000);
 
     fetchSummaryData();
     setInterval(fetchSummaryData, 60000);
     updateMarketStatus();
     setInterval(updateMarketStatus, 60000);
 
+setTimeout(() => {
+  const flashBox = document.getElementById("toastContainer");
+  if (flashBox) {
+    flashBox.classList.add("fade-out");
+    setTimeout(() => {
+      flashBox.style.display = 'none'; // fully remove after fade
+    }, 500);
+  }
+}, 3000);
+
   </script>
 </body>
-</html>
+</html> 
